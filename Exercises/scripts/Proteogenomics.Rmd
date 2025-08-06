@@ -14,6 +14,12 @@ if (!requireNamespace("tidyverse")) {
     install.packages("tidyverse")
   }
   library(tidyverse)
+
+if (!requireNamespace("ggpubr")) {
+    install.packages("ggpubr")
+  }
+  library(ggpubr)
+
 if (!requireNamespace("SomaDataIO")) {
     install.packages("SomaDataIO")
   }
@@ -44,6 +50,9 @@ example_adat <- read_adat("../data/example_data_v5.0_plasma.adat")
 #Are there NAs in the dataset?
 
 #What does seq.10000.28 mean?
+getAnalyteInfo(example_adat)
+
+
 ```
 
 Here's the link: <https://menu.somalogic.com/> for easier access!
@@ -54,6 +63,7 @@ example_olink <- read_delim("../data/20212016_Dube_NPX_2021-11-30.csv", delim = 
 #Do some basic exploration of the dataset
 
 #How many proteins are in this dataset?
+
 
 
 #How many samples are there?
@@ -185,6 +195,80 @@ A Z-score of 1 means the value is 1 standard deviation above the mean, making it
 
 Luckily, R has a built in function, `scale()`, which does this for us!
 
+```{r}
+#Let's try scaling our seq.10514.5 instead of chunking it!
+df <- dataset %>% select(c("SampleId", "Age","Sex","seq.10514.5", "seq.10464.6"))
+
+df$scaled_105 <- scale(df$seq.10514.5)
+
+#Now let's see the correlation
+
+cor(df$Age, df$scaled_105)
+
+#We can even get the p-value like so:
+
+cor.test(df$Age, df$scaled_105)
+
+#Keep in mind, that the correlation is only 0.37, which means that the R^2 is only
+
+cor(df$Age, df$scaled_105)^2
+
+#So Age only explains 14% of the variance found in the protein
+
+ggplot(df, aes(x = Age, y = scaled_105)) + geom_point(alpha = 0.5) + stat_cor() + geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") 
+
+#This stat_cor is from the ggpubr package and is really convienent!
+```
+
+Great! But correlation testing isn't the *best* way of looking at this information.
+
+Let's go back to the PowerPoint!
+
+### Linear Regression
+
+The function for linear regressions is a simple `lm()`.
+
+```{r}
+
+lm(Age ~ scaled_105, df)
+
+#We can get more information out of the model if we do the following
+
+linear_105 <- lm(scaled_105 ~ Age, df)
+summary(linear_105)
+```
+
+What does this mean?
+
+Residuals are the difference between the observed value and the line of best fit. We want to make sure they are normally distributed (Median around 0, 1Q and 3Q are close in magnitude to one another)
+
+Coefficents are the actual "meat" of the regression. This tells us that at the y-intercept, the estimated value of our protein is -1.73 SD from the mean AND that for every year older, on average the protein level is 0.03 SD higher.
+
+Most of the time, the intercept isn't meaningful for proteomics since adults and infants have different proteomic profiles and you can't have a 0 year old adult.
+
+The **slope for Age (0.031)** means that for every additional year of age, the protein level (`scaled_105`) increases by **0.031 standard deviations**, on average.
+
+The Std. Error or Standard Error reflects the **uncertainty** or **variability** in the estimated coefficient. A smaller SE means we're more confident in the precision of our estimate.
+
+This is also reflected in our t value (coming from a t-distribution), and the p-value.
+
+This also works for Categorical variables such as Sex.
+
+Try running a linear regression on Sex and our other protein in df `seq.10464.6`.
+
+```{r}
+
+#First scale seq.10464.6
+
+
+#Next, run a basic linear regression comparing Sex to seq.10464.6
+
+
+
+
+
+```
+
 Let's look at running a bunch of linear regressions together!
 
 ```{r}
@@ -200,7 +284,7 @@ rm(scaled_protein)
 metrics <- list()
 
 for(i in 3:163){
-  form <- paste0(colnames(regression)[i], " ~ Age + Sex")
+  form <- paste0(colnames(regression)[i], " ~ Age + Sex + Age*Sex")
   summ_regression <- lm(form, regression)  
   summary_regression <- summary(summ_regression)
   Age_pval <- summary_regression$coefficients[2, "Pr(>|t|)"]
@@ -211,13 +295,20 @@ for(i in 3:163){
   Sex_beta <- summary_regression$coefficients[3, "Estimate"]
   Sex_se <- summary_regression$coefficients[3, "Std. Error"]
   
+  Age_Sex_pval <- summary_regression$coefficients[4, "Pr(>|t|)"]
+  Age_Sex_beta <- summary_regression$coefficients[3, "Estimate"]
+  Age_Sex_se <- summary_regression$coefficients[3, "Std. Error"]
+  
   metrics[[i]] <- list(name = colnames(regression)[i],
                       Age_pval = Age_pval,
                        Age_beta = Age_beta,
                        Age_se = Age_se,
                       Sex_pval = Sex_pval,
                        Sex_beta = Sex_beta,
-                       Sex_se = Sex_se
+                       Sex_se = Sex_se,
+                      Age_Sex_pval = Age_Sex_pval,
+                       Age_Sex_beta = Age_Sex_beta,
+                       Age_Sex_se = Age_Sex_se
                       )
 }
 
@@ -225,7 +316,17 @@ metrics_df <- bind_rows(metrics)
 
 which.min(metrics_df$Age_pval)
 which.min(metrics_df$Sex_pval)
+which.min(metrics_df$Age_Sex_pval)
 
 metrics_df$name[138]
 metrics_df$name[108]
+metrics_df$name[12]
+
+metrics_df$Age_Sig <- metrics_df$Age_pval < 0.05
+metrics_df$Sex_Sig <- metrics_df$Sex_pval < 0.05
+metrics_df$Age_Sex_Sig <- metrics_df$Age_Sex_pval < 0.05
+
+smaller <- metrics_df[metrics_df$Age_Sig & metrics_df$Sex_Sig,]
+
+smaller
 ```
