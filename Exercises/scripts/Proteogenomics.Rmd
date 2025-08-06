@@ -1,0 +1,231 @@
+---
+title: "Proteogenomics"
+output: html_document
+author: Thomas Zheng
+date: 2025-08-12
+---
+
+Welcome to the R Markdown for the Proteogenomics workshop!
+
+```{r}
+#Let's first load some libraries that we'll need to use for the first section of our workshop!
+
+if (!requireNamespace("tidyverse")) {
+    install.packages("tidyverse")
+  }
+  library(tidyverse)
+if (!requireNamespace("SomaDataIO")) {
+    install.packages("SomaDataIO")
+  }
+  library(SomaDataIO)
+```
+
+Note: re-run this code block again to remove the install.packages output!
+
+```{r}
+#Let's set our working directory now so that we don't have to worry later!
+
+#setwd(INSERT YOUR DIRECTORY HERE)
+```
+
+# Intro to Proteomics
+
+## Somalogic Data Processing
+
+```{r}
+example_adat <- read_adat("../data/example_data_v5.0_plasma.adat")
+
+#Do some basic exploration of the dataset
+
+#Find the sex composition of the dataset
+
+#Find the age composition of the dataset
+
+#Are there NAs in the dataset?
+
+#What does seq.10000.28 mean?
+```
+
+Here's the link: <https://menu.somalogic.com/> for easier access!
+
+```{r}
+example_olink <- read_delim("../data/20212016_Dube_NPX_2021-11-30.csv", delim = ";")
+
+#Do some basic exploration of the dataset
+
+#How many proteins are in this dataset?
+
+
+#How many samples are there?
+
+
+
+#Are there NAs in the dataset?
+
+
+
+```
+
+# Association Testing & Multiplexing
+
+Welcome back! Let's work on our original Somalogic data set.
+
+```{r}
+#Our Somalogic dataset has some missing data; we could impute (predict) what the missing values should be but we will just remove them for this example.
+rm(example_olink)
+
+#This removes all participants with a missing Age (and coincidentally all participants with a missing Sex phenotype)
+dataset <- example_adat %>% filter(!is.na(Age))
+
+#In your actual datasets you might want to also check for missing Sex too!
+
+#Let's do a correlation first!
+
+ggplot(dataset, aes(x = Age, y = seq.10514.5)) + geom_point(alpha = 0.2)
+```
+
+Take a look at the y axis, this does not really *mean* anything. The units are arbitrary at the moment.
+
+There's two ways for us to scale this data.
+
+-   We could separate this into high and low (or even quartiles)
+
+-   We could standardize this by subtracting the mean and dividing by the standard deviation
+
+### Discrete sections
+
+Let's try separating this into discrete sections first!
+
+```{r}
+#Let's just grab the "important" information right now
+
+df <- dataset %>% select(c("SampleId", "Age","Sex","seq.10514.5", "seq.10464.6"))
+
+#Seperates the proteins into High if they are above the median and Low if they are below
+df$HighLow105 <- ifelse(df$seq.10514.5 > median(df$seq.10514.5),"High","Low")
+
+#This allows us to run stats on strings
+df$HighLow105 <- as.factor(df$HighLow105)
+
+
+ggplot(df, aes(x = HighLow105, y = Age)) + geom_boxplot()
+
+```
+
+Hmmm, let's try running a t test to see how significant this association is!
+
+```{r}
+t.test(Age ~ HighLow105, df)
+```
+
+Wow! So we could report this finding as "Participants with protein levels above the median were on average 6.81 [95% CI: 3.21 to 10.41] years older than the participants with protein levels below the median (p-value = 0.0002645)."
+
+Let's try looking at a protein that is associated with biological sex.
+
+```{r}
+#Seperates the proteins into High if they are above the median and Low if they are below
+df$HighLow104 <- ifelse(df$seq.10464.6 > median(df$seq.10464.6),"High","Low")
+
+#This allows us to run stats on strings
+df$HighLow104 <- as.factor(df$HighLow104)
+
+table(df$HighLow104,df$Sex)
+```
+
+Huh, looks like females are more likely to be associated with high protein levels!
+
+We can test this with a chi-squared test!
+
+```{r}
+chisq.test(df$HighLow104,df$Sex)
+```
+
+Great! This one is less meaningful; but we can say something along the lines of "Female participants were significantly more likely to have higher protein levels (above the median) than Male participants (p-value = 0.006107)."
+
+We can even test quartiles instead of just "High/Low", try running the same t-test and chi-squared tests on the quartiles! Here's an easy way to generate the quartiles!
+
+```{r}
+df$quartile105 <- cut(df$seq.10514.5,
+                   breaks = quantile(df$seq.10514.5, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE),
+                   include.lowest = TRUE,
+                   labels = c("Q1", "Q2", "Q3", "Q4"))
+
+table(df$quartile105)
+
+#---Now try and run a t.test on age except compare Q4 and Q1-----
+
+
+#Note that t-tests don't like it when you have more than 2 groups
+  #Error in t.test.formula(Age ~ quartile105, df) : 
+  #  grouping factor must have exactly 2 levels
+
+#Report the p-value!
+
+
+#---Using the code above, change it so that you split up seq.10464.6 into quartiles and compare Sex
+
+#Report the p-value!
+```
+
+Okay, but running quartiles leads to us throwing away half of our data! What if we don't discretize our proteins?
+
+### Scaling
+
+There are two types of scaling that we will discuss in this workshop:
+
+Z-score scaling and Inverse Normal Transformations (INT)
+
+There are others that suit different methods or applications but we will just discuss these two for today!
+
+INT is primarily used in GWAS so we'll discuss that during the pQTL section later on!
+
+Z-score scaling transforms a value by subtracting the **mean of the variable** (e.g., that specific protein expression across individuals) and dividing by the **standard deviation**.\
+
+A Z-score of 1 means the value is 1 standard deviation above the mean, making it easier to interpret how extreme or typical an observation is relative to the rest.
+
+Luckily, R has a built in function, `scale()`, which does this for us!
+
+Let's look at running a bunch of linear regressions together!
+
+```{r}
+regression <- dataset %>% select(c("Age","Sex"))
+regression_protein <- dataset %>% select(starts_with("seq"))
+scaled_protein <- regression_protein %>%  mutate_all(~ scale(.) %>% as.vector)
+
+regression <- cbind(regression, scaled_protein)
+
+rm(regression_protein)
+rm(scaled_protein)
+
+metrics <- list()
+
+for(i in 3:163){
+  form <- paste0(colnames(regression)[i], " ~ Age + Sex")
+  summ_regression <- lm(form, regression)  
+  summary_regression <- summary(summ_regression)
+  Age_pval <- summary_regression$coefficients[2, "Pr(>|t|)"]
+  Age_beta <- summary_regression$coefficients[2, "Estimate"]
+  Age_se <- summary_regression$coefficients[2, "Std. Error"]
+  
+  Sex_pval <- summary_regression$coefficients[3, "Pr(>|t|)"]
+  Sex_beta <- summary_regression$coefficients[3, "Estimate"]
+  Sex_se <- summary_regression$coefficients[3, "Std. Error"]
+  
+  metrics[[i]] <- list(name = colnames(regression)[i],
+                      Age_pval = Age_pval,
+                       Age_beta = Age_beta,
+                       Age_se = Age_se,
+                      Sex_pval = Sex_pval,
+                       Sex_beta = Sex_beta,
+                       Sex_se = Sex_se
+                      )
+}
+
+metrics_df <- bind_rows(metrics)
+
+which.min(metrics_df$Age_pval)
+which.min(metrics_df$Sex_pval)
+
+metrics_df$name[138]
+metrics_df$name[108]
+```

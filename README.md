@@ -31,5 +31,6 @@ This workshop is considered an advanced workshop where participants should under
 
 ## References
 *This work is the second interation of a previous workshop sponsored by Somalogic*
-   
+*The example Somalogic data was provided by Somalogic through their github https://github.com/SomaLogic/SomaLogic-Data*
+*The example Olink data was provided by Dube, Marie-Pierre Dube, Marie-Pierre (2023). Raw Olink data. figshare. Dataset. https://doi.org/10.6084/m9.figshare.22811915.v1*
 *Workshop created as part of the McGill Initiative in Computational Medicine*

@@ -1,3 +1,3 @@
-## Add here instructions/pipeline
+## There will only be one script which encompasses the entire workshop
 
-Inside this directory add data, scripts and results of exercises
+scripts/Proteogenomics.rmd
