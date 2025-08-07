@@ -197,9 +197,12 @@ Luckily, R has a built in function, `scale()`, which does this for us!
 
 ```{r}
 #Let's try scaling our seq.10514.5 instead of chunking it!
-df <- dataset %>% select(c("SampleId", "Age","Sex","seq.10514.5", "seq.10464.6"))
+df <- dataset %>% select(c("SampleId", "Age","Sex","seq.10514.5", "seq.10464.6", "seq.10527.22", "seq.10438.19", "seq.10440.26"))
 
 df$scaled_105 <- scale(df$seq.10514.5)
+
+#We should make this into a factor so that our regression can deal with it
+df$Sex <- as.factor(df$Sex)
 
 #Now let's see the correlation
 
@@ -252,6 +255,12 @@ The Std. Error or Standard Error reflects the **uncertainty** or **variability**
 
 This is also reflected in our t value (coming from a t-distribution), and the p-value.
 
+Our overall formula would look something like this:
+
+$$
+\text{scaled_105} = -1.733 + 0.03097 \times \text{Age}
+$$
+
 This also works for Categorical variables such as Sex.
 
 Try running a linear regression on Sex and our other protein in df `seq.10464.6`.
@@ -264,17 +273,196 @@ Try running a linear regression on Sex and our other protein in df `seq.10464.6`
 #Next, run a basic linear regression comparing Sex to seq.10464.6
 
 
-
+#What does SexM mean? 
 
 
 ```
 
+### Multivariate Linear Regression
+
+Normally you will have more variables than just Age and Sex in your model. In statistical modeling, such as in biomedical or epidemiological research, it's common and important to include multiple variables in a linear regression model, such as Age, Sex, and other potential confounders or covariates (BMI, sampling location, genetic ancestry, etc). This can be counterintuitive if you're coming from a machine learning perspective, where adding too many variables (especially irrelevant or redundant ones) can lead to overfitting and reduced generalization performance. The goals differ: statistical models often prioritize *interpretability and causal insight*, while machine learning models typically prioritize *prediction accuracy*.
+
+However, in this dataset, we will just use Age, Sex, and we'll even include an interaction term!
+
+Let's take a look back at `seq.10514.5` but this time let's look the model when we include both Age and Sex as variables.
+
+```{r}
+multi_linear_105 <- lm(scaled_105 ~ Age + Sex, df)
+summary(multi_linear_105)
+```
+
+Okay, lets break down what this means.
+
+```         
+scaled_105 ~ Age + Sex, data = df
+```
+
+Means we are seeing how both Age AND Sex correlate with the data
+
+```         
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-1.9851 -0.5978 -0.0543  0.4452  4.3063 
+```
+
+The residuals still look relatively normally distributed, which is promising
+
+```         
+Coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+(Intercept) -1.784327   0.357859  -4.986 1.59e-06 ***
+Age          0.031151   0.006058   5.142 7.86e-07 ***
+SexM         0.082932   0.146185   0.567    0.571
+```
+
+It looks like Age is still significantly associated with protein levels (sometimes adding a co-variate can increase the p-value; especially if the added co-variate explains more of the variation in the data.
+
+But, it looks like Sex is NOT associated with protein level. In fact, SexM means that our baseline is female; and that changing it from Female to Male, does not significantly change the protein levels.
+
+Let's look at `seq.10527.22` now instead!
+
+```{r}
+
+#Scale seq.10527.22
+df$scaled_1052 <- scale(df$seq.10527.22)
+#Run a multi-variate linear regression
+
+#Read out the summary
+
+```
+
+You *should* see something like this:
+
+```         
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-0.6154 -0.2467 -0.1013  0.0454 11.7777 
+```
+
+Woah, that's a crazy max value, I wonder what's happening here. One way we can check is through using the functions
+
+`qqnorm() and qqline()`
+
+```{r}
+#qqnorm(residuals(YOUR_MODEL_HERE))
+#qqline(residuals(YOUR_MODEL_HERE))
+```
+
+![](images/clipboard-651316143.png)
+
+You should see something like this plot appear. This is known as a Q-Q plot which stands for Quantile-Quantile plot. This specific plot is comparing how a normal distribution looks like compared to the actual distribution of the residuals (keep in mind you can also run this on your actual data too). The line that you see here shows the identity, or where your residuals *should* be if everything was normal.
+
+As you can see here, it looks like we have a couple of outliers, especially at the top. Let's see what it looks like as a plot!
+
+```{r}
+ggplot(df, aes(x = Age, y = scaled_1052, colour = Sex)) + geom_point(alpha = 0.2)
+```
+
+Well then, I think we found our outlier!
+
+This is actually a bad practice to run your analysis *and then* look for outliers. A better practice would be to fix this right after scaling, many people will either cap out outliers (max of 3 or 4) or will exclude them from the data. Let's try excluding them now.
+
+```{r}
+df$scaled_1052 <- ifelse(df$scaled_1052 > 4|df$scaled_1052 < -4, NA, df$scaled_1052)
+table(is.na(df$scaled_1052))
+```
+
+Looks like we just removed one sample anyways!
+
+Let's re-run our analysis now.
+
+```{r}
+multi_linear_1052 <- lm(scaled_1052 ~ Age + Sex, df)
+summary(multi_linear_1052)
+```
+
+Whoops, so looks like that singular outlier was driving all of the significant associations!
+
+Let's check out another example that actually works. `seq.10440.26`
+
+```{r}
+df$scaled_1044 <- scale(df$seq.10440.26)
+df$scaled_1044 <- ifelse(df$scaled_1044 > 4|df$scaled_1044 < -4, NA, df$scaled_1044)
+multi_linear_1044 <- lm(scaled_1044 ~ Age + Sex, df)
+summary(multi_linear_1044)
+```
+
+Hmmm, let's check the QQ plot
+
+```{r}
+qqnorm(residuals(multi_linear_1044))
+qqline(residuals(multi_linear_1044))
+```
+
+Still not a perfect fit, in fact; let's check the histogram of our original dataset.
+
+```{r}
+hist(df$scaled_1044)
+```
+
+Ahh, as you can see, our original data was not normally distributed which can lead to these problems. We'll discuss a way to deal with this - but what this does mean is that while our betas or effect sizes are accurate; our p-values may be inaccurate. Thankfully, we have enough observations that through the law of large numbers, we can still be fairly confident in our p-values (although we will also discuss why p-values are a can of worms in of itself).
+
+```         
+Coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+(Intercept) -1.390404   0.336254  -4.135 5.73e-05 ***
+Age          0.027389   0.005704   4.802 3.61e-06 ***
+SexM        -0.331562   0.137632  -2.409   0.0171 *  
+```
+
+Okay, so what do these coefficients mean?
+
+Well, our model is telling us that for every one year older a participant is, they **on average** have an increased protein level of 0.027 standard deviations. Meanwhile, if they are a male as opposed to a female, then they will be -0.33 standard deviations lower to begin with. You can visualize this as:
+
+$$
+\text{scaled_1044} = -1.39 + 0.0274 \times \text{Age } + -0.3316 \text{ if Sex = Male} 
+$$
+
+![](images/clipboard-3079017492.png)
+
+![](images/clipboard-1143954026.png)
+
+In this case, our men in our sample would be "Group B" while our women would be "Group A".
+
+### Interaction terms
+
+Okay, now that we tried having more than one variable, what if they interact with each other? For example, what if Age was only associated with protein levels in Men but not Women?
+
+We can change that by adding in the term $Sex*Age$ into our regression.
+
+```{r}
+multi_linear_interaction_1044 <- lm(scaled_1044 ~ Age + Sex + Age*Sex, df)
+summary(multi_linear_interaction_1044)
+```
+
+This is an instance of adding an additional covariate results in the loss of significance for another covariate!
+
+```{r}
+#Now try on your own to make a multivariable regression with an interaction term with seq.10438.19
+
+#Also, try without the interaction term and examine what happens to the significance. Why do you think that occurred?
+
+```
+
+## Problems associated with multiple comparisons
+
 Let's look at running a bunch of linear regressions together!
 
 ```{r}
+#Try and write some code that will
+#a) scale AND remove the outliers from every single protein tested
+#b) Run a linear regression with Age, Sex, and Age*Sex for each single protein
+
+
+```
+
+```{r eval=FALSE, include=FALSE}
 regression <- dataset %>% select(c("Age","Sex"))
 regression_protein <- dataset %>% select(starts_with("seq"))
-scaled_protein <- regression_protein %>%  mutate_all(~ scale(.) %>% as.vector)
+scaled_protein <- regression_protein %>% mutate_all(~ {
+    scaled <- scale(.) %>% as.vector()
+    ifelse(scaled > 4 | scaled < -4, NA, scaled)
+  })
 
 regression <- cbind(regression, scaled_protein)
 
@@ -282,6 +470,8 @@ rm(regression_protein)
 rm(scaled_protein)
 
 metrics <- list()
+
+regression$Sex <- as.factor(regression$Sex)
 
 for(i in 3:163){
   form <- paste0(colnames(regression)[i], " ~ Age + Sex + Age*Sex")
@@ -296,8 +486,8 @@ for(i in 3:163){
   Sex_se <- summary_regression$coefficients[3, "Std. Error"]
   
   Age_Sex_pval <- summary_regression$coefficients[4, "Pr(>|t|)"]
-  Age_Sex_beta <- summary_regression$coefficients[3, "Estimate"]
-  Age_Sex_se <- summary_regression$coefficients[3, "Std. Error"]
+  Age_Sex_beta <- summary_regression$coefficients[4, "Estimate"]
+  Age_Sex_se <- summary_regression$coefficients[4, "Std. Error"]
   
   metrics[[i]] <- list(name = colnames(regression)[i],
                       Age_pval = Age_pval,
@@ -329,4 +519,45 @@ metrics_df$Age_Sex_Sig <- metrics_df$Age_Sex_pval < 0.05
 smaller <- metrics_df[metrics_df$Age_Sig & metrics_df$Sex_Sig,]
 
 smaller
+
+ggplot(regression, aes(x = Age, y = seq.10438.19, colour = Sex)) + geom_point(alpha = 0.2)
+
+```
+
+Now you have a bunch of p-values; how many are significant? We can plot this as a volcano plot, where we use the betas or effect sizes as the x-axis and the p-values as the y-axis.
+
+```{r}
+metrics_df <- readRDS("../data/data.rds")
+
+ggplot(metrics_df, aes(x = Age_beta, y = Age_pval)) + geom_point(alpha = 0.5)
+```
+
+Normally, you see this inverted and the y-axis scaled to a log axis.
+
+```{r}
+ggplot(metrics_df, aes(x = Age_beta, y = -log(Age_pval, base = 10), colour = Age_Sig)) + geom_point(alpha = 0.5)
+```
+
+Let's try applying both Bonferroni and FDR.
+
+```{r}
+metrics_df$Age_pval_Bon <- p.adjust(metrics_df$Age_pval, method = "bonferroni")
+
+table(metrics_df$Age_pval_Bon < 0.05)
+```
+
+Wow, we lost all of our significant results except for the top two!
+
+```{r}
+metrics_df$Age_pval_FDR <- p.adjust(metrics_df$Age_pval, method = "fdr")
+
+#How many associations do we keep with FDR?
+```
+
+Let's recolour our significant hits using this method instead and plot it!
+
+```{r}
+#Add or change a significance column
+
+#Re-draw the ggplot
 ```
