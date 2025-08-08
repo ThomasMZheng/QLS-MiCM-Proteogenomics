@@ -567,3 +567,98 @@ Now let's do the same thing but for Sex and our Age\*Sex interaction
 ```{r}
 
 ```
+
+# Protein Quantitative Trait Loci
+
+Okay, so we have our genetic data found here `Exercises/data`
+
+We're not going to open the bed file, since it is in binary; but let's open up the .bim and .fam files
+
+```{r}
+bim <- read_delim("../data/ToyData.bim", col_names = F, col_types = "iciicc")
+#The way bim files are created is with 6 columns and n rows; n = number of variants
+
+dim(bim)
+
+head(bim)
+```
+
+As you can see, we have 10,000 variants and 6 columns
+
+| Chromosome | Variant ID | Genetic Position | Base Pair | Alternate Base | Reference Base |
+|----|----|----|----|----|----|
+| 1 | 1:23613 | 0 | 23613 | T | C |
+
+: Example .bim file
+
+Due to this being a toy dataset, I have left the genetic position empty, the variant ID as the chromosome and base pair (opposed to the rsID) and kept the same Alternate and Reference Bases for each variant.
+
+Now let's look at the .fam file
+
+```{r}
+fam <- read_delim("../data/ToyData.fam", col_names = F)
+```
+
+.fam files also have 6 columns but this time the number of rows are the number of samples or individuals you have in your dataset
+
+| Family ID | Individual ID | Father's IID | Mother's IID | Sex | Phenotype |
+|-----------|---------------|--------------|--------------|-----|-----------|
+| Ind80     | Ind80         | 0            | 0            | 2   | -9        |
+
+Because this again is a toy dataset, we are not dealing with a genetic repository that has any family structure (Where a child and their two parents and found in the same dataset). That leads the first, third, and fourth columns irrelevant for our work. Sex is coded as ('1' = male, '2' = female, '0' = unknown) in PLINK so just keep that in mind compared to a 0/1 coding that other places use. Finally, the phenotype is coding -9?
+
+```{r}
+table(fam$X6)
+```
+
+-9 in PLINK means missing data; so for us we will need to manually add our phenotype that we want to test.
+
+Let's look at `seq.10527.22`
+
+```{r}
+#Now we have a variable that is scaled so we can just do something like:
+#fam$X6 <- df$scaled_1052
+
+#But wait! Let's check if the IDs are the same
+
+print(df$SampleId)
+print(fam$X1)
+
+#This happens all the time, but is an easy fix!
+
+df$SampleId <- paste0("Ind",df$SampleId)
+
+#Now we have...
+
+print(df$SampleId)
+
+#dplyr has a really convienent function to add only what we need to a dataframe in the order we need
+
+dfkey <- df %>% select(c("SampleId","scaled_1052"))
+
+newfam <- left_join(fam, dfkey, by = c("X1" = "SampleId"))
+
+newfam <- newfam[,-6]
+
+newfam[,6] <- unlist(newfam[,6])
+
+#This might overwrite your fam file - save your old file somewhere else if you want a backup
+write_delim(newfam,"ToyData.fam",col_names = F)
+#For me at least, the file is written to the directory of the .Rmd which is different from my working directory.
+```
+
+### Let's go to PLINK with our files now!
+
+We can even do this in RStudio's Terminal! (Windows users, please let us know if you cannot run it)
+
+If you have not run PLINK before, or just downloaded it; you might need to go to your settings to allow running an "unknown application"
+
+In the terminal run:
+
+`./plink` and you should see the following:
+
+![](images/clipboard-2191143996.png)
+
+We can do a *super simple* association by just running the following:
+
+\`./plink
