@@ -11,6 +11,7 @@ This workshop is considered an advanced workshop where participants should under
 ## Sofware <List of software that will be used during the workshop>
 * [R](https://cran.rstudio.com/)
 * [RStudio](https://posit.co/download/rstudio-desktop/)
+* [PLINK 1.9](https://www.cog-genomics.org/plink/1.9/)
 
    
 ## Small Outline/Structure (with link to exercises in colab if applicable)
