@@ -561,3 +561,9 @@ Let's recolour our significant hits using this method instead and plot it!
 
 #Re-draw the ggplot
 ```
+
+Now let's do the same thing but for Sex and our Age\*Sex interaction
+
+```{r}
+
+```
