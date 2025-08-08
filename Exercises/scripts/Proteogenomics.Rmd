@@ -661,4 +661,112 @@ In the terminal run:
 
 We can do a *super simple* association by just running the following:
 
-\`./plink
+`./plink --bfile ../QLS-MiCM-Proteogenomics/Exercises/data/ToyData --assoc`
+
+You can change the file directories by running it from the data file set and just giving the path for PLINK but this way everyone should be able to run it.
+
+But, this does not take into account covariates such as Age and Sex; for that we need to make a covariate file
+
+```{r}
+covar <- df %>% select(c("SampleId","Age"))
+
+#PLINK needs both an FID and an IID column so
+
+covar$FID <- covar$SampleId
+covar <- covar %>%  rename(IID = SampleId)
+
+covar <- covar %>% select(c("FID","IID", "Age"))
+
+write_delim(covar, "covar.txt")
+```
+
+Now try running this command:
+
+`./plink --bfile ../QLS-MiCM-Proteogenomics/Exercises/data/ToyData --linear sex --covar ../QLS-MiCM-Proteogenomics/Exercises/scripts/covar.txt`
+
+We used the sex option after linear but could have easily just added Sex as a covariate in covar.txt
+
+Again, most of the time, we would also have other covariates such BMI, Smoking Status, Sampling Centre, or other meaningful covariates.
+
+### Let's come back to R!
+
+Let's read the association:
+
+```{r}
+Result <- read_table("../../../plink_mac_20250806/plink.assoc.linear", col_types = "iciccdddd")
+```
+
+You can ignore this warning about a tenth column but if it bugs you, go into the .linear file and delete the whitespace after P
+
+First thing you can see here is it also does a test on the covarites; but we're going to just look at the additive genotypic test
+
+```{r}
+table(Result$TEST)
+
+Add_result <- Result[Result$TEST == "ADD",]
+```
+
+We can even run a QQ-plot on this model, just like we did on our linear models!
+
+```{r}
+#Let's see how inflated our GWAS is
+#We're going to use ggfastman to run our analysis
+if (!requireNamespace("devtools")) {
+    install.packages("devtools")
+  }
+if (!requireNamespace("ggfastman")) {
+    devtools::install_github("roman-tremmel/ggfastman", upgrade = "never")
+  }
+library(ggfastman)
+
+fast_qq(Add_result$P)
+```
+
+This isn't telling us what the distribution of the residuals are; this plot is showing us how the p-values are distributed.\
+\
+This is an ideal scenario with most of the dots following the red line and a single dot going way above the axis; meaning we have one significant SNP.
+
+In all honestly, if I were to see something like this result in a real dataset that was not already pruned - I would be sceptical. I would expect to see something more like the following.
+
+![Koshimizu et al, 2019 Translational Psychiatry](images/clipboard-2788009076.png){width="386"}
+
+This is because we would expect SNPs that are geographically close to one another to have similar effect size due to Linkage Disequilibrium.
+
+Finally, we can also run a Manhatten Plot on our GWAS results to see how it looks like.
+
+```{r}
+colnames(Add_result)
+#fast_manhatten needs chr, pos, pvalue 
+colnames(Add_result)[c(1,3,9)] <- c("chr", "pos", "pvalue")
+
+fast_manhattan(Add_result)
+```
+
+Again, this is not typical of a manhatten plot since we normally would have 1 million+ SNPs across 22 - 23 chromosomes. This would be more typical.
+
+![Koshimizu et al](images/clipboard-2625715672.png)
+
+Regardless, let us keep going with our analysis for now.
+
+```{r}
+#Find the smallest p-value
+#Which SNP is it located in?
+#What does the effect size mean?
+
+#What is this protein?
+```
+
+Normally you would then try to find the *cis* region of all of your proteins of interest. The easiest way is to just use ensembl, uniprot, or any other platform to find the cis region.
+
+Now it's time for you to do your own work.
+
+Find what this SNP does, does the effect size with the mutation make sense? Is this a cis or trans pQTL?
+
+```{r}
+
+
+
+
+```
+
+Thank you for attending this workshop, if you have any questions feel free to address them to me at thomas.zheng\@mail.mcgill.ca or reach out to the QLS-MiCM email!
