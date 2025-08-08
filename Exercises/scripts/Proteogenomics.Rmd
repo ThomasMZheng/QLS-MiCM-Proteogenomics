@@ -634,7 +634,14 @@ print(df$SampleId)
 
 #dplyr has a really convienent function to add only what we need to a dataframe in the order we need
 
-dfkey <- df %>% select(c("SampleId","scaled_1052"))
+dfkey <- df %>% select(c("SampleId","seq.10527.22"))
+
+if (!requireNamespace("RNOmni")) {
+    install.packages("RNOmni")
+  }
+library(RNOmni)
+
+dfkey$INT <- RankNorm(dfkey$seq.10527.22)
 
 newfam <- left_join(fam, dfkey, by = c("X1" = "SampleId"))
 
@@ -754,6 +761,8 @@ Regardless, let us keep going with our analysis for now.
 #What does the effect size mean?
 
 #What is this protein?
+
+min(Add_result$pvalue)
 ```
 
 Normally you would then try to find the *cis* region of all of your proteins of interest. The easiest way is to just use ensembl, uniprot, or any other platform to find the cis region.
