@@ -44,13 +44,16 @@ example_adat <- read_adat("../data/example_data_v5.0_plasma.adat")
 #Do some basic exploration of the dataset
 
 #Find the sex composition of the dataset
+table(example_adat$Sex)
 
 #Find the age composition of the dataset
+summary(example_adat$Age)
 
 #Are there NAs in the dataset?
+table(is.na(example_adat$Sex))
 
 #What does seq.10000.28 mean?
-getAnalyteInfo(example_adat)
+getAnalyteInfo(example_adat)$
 
 
 ```
@@ -64,11 +67,11 @@ example_olink <- read_delim("../data/20212016_Dube_NPX_2021-11-30.csv", delim = 
 
 #How many proteins are in this dataset?
 
-
+length(table(example_olink$UniProt))
 
 #How many samples are there?
 
-
+length(table(example_olink$SampleID))
 
 #Are there NAs in the dataset?
 
@@ -164,6 +167,9 @@ table(df$quartile105)
 
 #---Now try and run a t.test on age except compare Q4 and Q1-----
 
+newdf <- df[df$quartile105 == "Q1"|df$quartile105 == "Q4",]
+
+t.test(Age ~ quartile105, newdf)
 
 #Note that t-tests don't like it when you have more than 2 groups
   #Error in t.test.formula(Age ~ quartile105, df) : 
@@ -173,6 +179,16 @@ table(df$quartile105)
 
 
 #---Using the code above, change it so that you split up seq.10464.6 into quartiles and compare Sex
+
+df$quartile104 <-  cut(df$seq.10464.6,
+                   breaks = quantile(df$seq.10464.6, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE),
+                   include.lowest = TRUE,
+                   labels = c("Q1", "Q2", "Q3", "Q4"))
+
+
+chisq.test(df$quartile104,df$Sex)
+
+table(df$quartile104,df$Sex)
 
 #Report the p-value!
 ```
@@ -202,7 +218,7 @@ df <- dataset %>% select(c("SampleId", "Age","Sex","seq.10514.5", "seq.10464.6",
 df$scaled_105 <- scale(df$seq.10514.5)
 
 #We should make this into a factor so that our regression can deal with it
-df$Sex <- as.factor(df$Sex)
+#df$Sex <- as.factor(df$Sex)
 
 #Now let's see the correlation
 
@@ -269,12 +285,17 @@ Try running a linear regression on Sex and our other protein in df `seq.10464.6`
 
 #First scale seq.10464.6
 
+df$scaled_104 <- scale(df$seq.10464.6)
 
 #Next, run a basic linear regression comparing Sex to seq.10464.6
 
+df$Sex <- factor(df$Sex)
+
+linear_104 <- lm(scaled_104 ~ Sex, df)
 
 #What does SexM mean? 
 
+summary(linear_104)
 
 ```
 
@@ -326,9 +347,9 @@ Let's look at `seq.10527.22` now instead!
 #Scale seq.10527.22
 df$scaled_1052 <- scale(df$seq.10527.22)
 #Run a multi-variate linear regression
-
+multivariate_1052 <- lm(scaled_1052 ~ Age + Sex, df)
 #Read out the summary
-
+summary(multivariate_1052)
 ```
 
 You *should* see something like this:
@@ -344,8 +365,8 @@ Woah, that's a crazy max value, I wonder what's happening here. One way we can c
 `qqnorm() and qqline()`
 
 ```{r}
-#qqnorm(residuals(YOUR_MODEL_HERE))
-#qqline(residuals(YOUR_MODEL_HERE))
+qqnorm(residuals(multivariate_1052))
+qqline(residuals(multivariate_1052))
 ```
 
 ![](images/clipboard-651316143.png)
@@ -440,8 +461,17 @@ This is an instance of adding an additional covariate results in the loss of sig
 ```{r}
 #Now try on your own to make a multivariable regression with an interaction term with seq.10438.19
 
+df$scaled_1043 <- scale(df$seq.10438.19)
+df$scaled_1043 <- ifelse(df$scaled_1043 > 4|df$scaled_1043 < -4, NA, df$scaled_1043)
+multi_linear_1043 <- lm(scaled_1043 ~ Age + Sex + Age*Sex, df)
+summary(multi_linear_1043)
+
 #Also, try without the interaction term and examine what happens to the significance. Why do you think that occurred?
 
+multi_linear_1043 <- lm(scaled_1043 ~ Age + Sex, df)
+summ_multi <- summary(multi_linear_1043)
+
+summ_multi$coefficients
 ```
 
 ## Problems associated with multiple comparisons
@@ -453,7 +483,51 @@ Let's look at running a bunch of linear regressions together!
 #a) scale AND remove the outliers from every single protein tested
 #b) Run a linear regression with Age, Sex, and Age*Sex for each single protein
 
+regression <- dataset %>% select(c("Age","Sex"))
+regression_protein <- dataset %>% select(starts_with("seq"))
+scaled_protein <- regression_protein %>% mutate_all(~ {
+    scaled <- scale(.) %>% as.vector()
+    ifelse(scaled > 4 | scaled < -4, NA, scaled)
+  })
 
+regression <- cbind(regression, scaled_protein)
+
+metrics <- list()
+
+regression$Sex <- as.factor(regression$Sex)
+
+for(i in 3:163){
+  form <- paste0(colnames(regression)[i], " ~ Age + Sex + Age*Sex")
+  summ_regression <- lm(form, regression)  
+  summary_regression <- summary(summ_regression)
+  Age_pval <- summary_regression$coefficients[2, "Pr(>|t|)"]
+  Age_beta <- summary_regression$coefficients[2, "Estimate"]
+  Age_se <- summary_regression$coefficients[2, "Std. Error"]
+  
+  Sex_pval <- summary_regression$coefficients[3, "Pr(>|t|)"]
+  Sex_beta <- summary_regression$coefficients[3, "Estimate"]
+  Sex_se <- summary_regression$coefficients[3, "Std. Error"]
+  
+  Age_Sex_pval <- summary_regression$coefficients[4, "Pr(>|t|)"]
+  Age_Sex_beta <- summary_regression$coefficients[4, "Estimate"]
+  Age_Sex_se <- summary_regression$coefficients[4, "Std. Error"]
+  
+  metrics[[i]] <- list(name = colnames(regression)[i],
+                      Age_pval = Age_pval,
+                       Age_beta = Age_beta,
+                       Age_se = Age_se,
+                      Sex_pval = Sex_pval,
+                       Sex_beta = Sex_beta,
+                       Sex_se = Sex_se,
+                      Age_Sex_pval = Age_Sex_pval,
+                       Age_Sex_beta = Age_Sex_beta,
+                       Age_Sex_se = Age_Sex_se
+                      )
+}
+
+metrics_df <- bind_rows(metrics)
+
+metrics_df
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -536,6 +610,8 @@ Normally, you see this inverted and the y-axis scaled to a log axis.
 
 ```{r}
 ggplot(metrics_df, aes(x = Age_beta, y = -log(Age_pval, base = 10), colour = Age_Sig)) + geom_point(alpha = 0.5)
+
+table(metrics_df$Age_Sig)
 ```
 
 Let's try applying both Bonferroni and FDR.
@@ -551,6 +627,8 @@ Wow, we lost all of our significant results except for the top two!
 ```{r}
 metrics_df$Age_pval_FDR <- p.adjust(metrics_df$Age_pval, method = "fdr")
 
+table(metrics_df$Age_pval_FDR < 0.05)
+
 #How many associations do we keep with FDR?
 ```
 
@@ -558,14 +636,29 @@ Let's recolour our significant hits using this method instead and plot it!
 
 ```{r}
 #Add or change a significance column
-
+metrics_df$Age_FDR_Sig <- metrics_df$Age_pval_FDR < 0.05
 #Re-draw the ggplot
+
+ggplot(metrics_df, aes(x = Age_beta, y = -log(Age_pval, base = 10), colour = Age_FDR_Sig)) + geom_point(alpha = 0.5)
 ```
 
 Now let's do the same thing but for Sex and our Age\*Sex interaction
 
 ```{r}
 
+metrics_df$Sex_pval_FDR <- p.adjust(metrics_df$Sex_pval, method = "fdr")
+metrics_df$Age_Sex_pval_FDR <- p.adjust(metrics_df$Age_Sex_pval, method = "fdr")
+
+metrics_df$Sex_FDR_Sig <- metrics_df$Sex_pval_FDR < 0.05
+metrics_df$Age_Sex_FDR_Sig <- metrics_df$Age_Sex_pval_FDR < 0.05
+
+min(metrics_df$Age_Sex_pval)
+
+
+
+ggplot(metrics_df, aes(x = Sex_beta, y = -log(Sex_pval, base = 10), colour = Sex_FDR_Sig)) + geom_point(alpha = 0.5)
+
+ggplot(metrics_df, aes(x = Age_Sex_beta, y = -log(Age_Sex_pval, base = 10), colour = Age_Sex_FDR_Sig)) + geom_point(alpha = 0.5)
 ```
 
 # Protein Quantitative Trait Loci
@@ -586,7 +679,7 @@ head(bim)
 As you can see, we have 10,000 variants and 6 columns
 
 | Chromosome | Variant ID | Genetic Position | Base Pair | Alternate Base | Reference Base |
-|----|----|----|----|----|----|
+|------------|------------|------------|------------|------------|------------|
 | 1 | 1:23613 | 0 | 23613 | T | C |
 
 : Example .bim file
@@ -647,7 +740,7 @@ newfam <- left_join(fam, dfkey, by = c("X1" = "SampleId"))
 
 newfam <- newfam[,-6]
 
-newfam[,6] <- unlist(newfam[,6])
+newfam <- newfam[,-6]
 
 #This might overwrite your fam file - save your old file somewhere else if you want a backup
 write_delim(newfam,"ToyData.fam",col_names = F)
@@ -773,9 +866,9 @@ Find what this SNP does, does the effect size with the mutation make sense? Is t
 
 ```{r}
 
+which.min(Add_result$P)
 
-
-
+Add_result$BETA[7338]
 ```
 
 Thank you for attending this workshop, if you have any questions feel free to address them to me at thomas.zheng\@mail.mcgill.ca or reach out to the QLS-MiCM email!
